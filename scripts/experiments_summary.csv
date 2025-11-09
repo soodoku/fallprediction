@@ -1,0 +1,6 @@
+Experiment,Features,Accuracy,Sensitivity,Specificity
+I: Linear Variables,20 linear vars,88.6 ± 0.0,0.0 ± 0.0,100.0 ± 0.0
+I: Nonlinear Variables,41 nonlinear vars,84.5 ± 1.0,2.0 ± 6.3,95.1 ± 0.8
+II: Linear PCs,10 PCs,89.3 ± 1.1,6.0 ± 9.7,100.0 ± 0.0
+II: Nonlinear PCs,26 PCs,87.0 ± 1.1,0.0 ± 0.0,98.2 ± 1.2
+III: Combined (Best),30 PCs (26 NL + 4 L),87.7 ± 1.2,0.0 ± 0.0,99.0 ± 1.3
