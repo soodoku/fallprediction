@@ -20,11 +20,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import custom modules
-sys.path.insert(0, 'src')
-from data_loader import load_and_prepare_data
-from pca_features import GaitFeaturePCA
-from model_evaluation import evaluate_model, format_results_table, print_results_summary
-from visualization import save_all_visualizations
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from src.data_loader import load_and_prepare_data
+from src.pca_features import GaitFeaturePCA
+from src.model_evaluation import evaluate_model, format_results_table, print_results_summary
+from src.visualization import save_all_visualizations
 
 # Import sklearn models
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -397,7 +397,7 @@ def main():
     print("="*80)
 
     data = load_and_prepare_data(
-        data_path='data/combined_output.csv',
+        data_path='data/processed/combined_output.csv',
         test_size=0.25,
         random_state=42,
         scale=False,  # We'll handle scaling separately for PCA vs raw

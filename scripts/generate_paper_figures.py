@@ -32,14 +32,14 @@ plt.rcParams.update({
     'text.usetex': False,  # Set to True if LaTeX is available
 })
 
-sys.path.insert(0, 'src')
-from data_loader import load_and_prepare_data
-from model_evaluation import format_results_table
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from src.data_loader import load_and_prepare_data
+from src.model_evaluation import format_results_table
 
 
 def load_results():
     """Load experimental results."""
-    results_df = pd.read_csv('outputs/results/model_comparison_results.csv')
+    results_df = pd.read_csv('../results/tables/model_comparison_results.csv')
     return results_df
 
 
@@ -89,11 +89,11 @@ def create_figure_1_confusion_matrices():
     plt.tight_layout()
 
     # Create figures directory if it doesn't exist
-    os.makedirs('outputs/figures/manuscript', exist_ok=True)
+    os.makedirs('../results/figures/manuscript', exist_ok=True)
 
-    plt.savefig('outputs/figures/manuscript/Figure1_ConfusionMatrices.png',
+    plt.savefig('../results/figures/manuscript/Figure1_ConfusionMatrices.png',
                 bbox_inches='tight', dpi=600)
-    plt.savefig('outputs/figures/manuscript/Figure1_ConfusionMatrices.pdf',
+    plt.savefig('../results/figures/manuscript/Figure1_ConfusionMatrices.pdf',
                 bbox_inches='tight')
     print("Figure 1 saved: Confusion matrices")
     plt.close()
@@ -166,9 +166,9 @@ def create_figure_2_roc_curves():
     ax.set_ylim([-0.02, 1.02])
 
     plt.tight_layout()
-    plt.savefig('outputs/figures/manuscript/Figure2_ROC_Curves.png',
+    plt.savefig('../results/figures/manuscript/Figure2_ROC_Curves.png',
                 bbox_inches='tight', dpi=600)
-    plt.savefig('outputs/figures/manuscript/Figure2_ROC_Curves.pdf',
+    plt.savefig('../results/figures/manuscript/Figure2_ROC_Curves.pdf',
                 bbox_inches='tight')
     print("Figure 2 saved: ROC curves")
     plt.close()
@@ -233,9 +233,9 @@ def create_figure_3_metrics_comparison():
                  fontweight='bold', fontsize=14, y=0.995)
     plt.tight_layout()
 
-    plt.savefig('outputs/figures/manuscript/Figure3_Metrics_Comparison.png',
+    plt.savefig('../results/figures/manuscript/Figure3_Metrics_Comparison.png',
                 bbox_inches='tight', dpi=600)
-    plt.savefig('outputs/figures/manuscript/Figure3_Metrics_Comparison.pdf',
+    plt.savefig('../results/figures/manuscript/Figure3_Metrics_Comparison.pdf',
                 bbox_inches='tight')
     print("Figure 3 saved: Metrics comparison")
     plt.close()
@@ -245,7 +245,7 @@ def create_supplementary_table_1():
     """
     Supplementary Table 1: Detailed bootstrap statistics with 95% CIs.
     """
-    detailed_df = pd.read_csv('outputs/results/detailed_bootstrap_results.csv')
+    detailed_df = pd.read_csv('../results/tables/detailed_bootstrap_results.csv')
 
     # Format for publication
     output_rows = []
@@ -281,11 +281,11 @@ def create_supplementary_table_1():
     output_df = pd.DataFrame(output_rows)
 
     # Save as CSV and LaTeX
-    os.makedirs('outputs/tables', exist_ok=True)
-    output_df.to_csv('outputs/tables/SupplementaryTable1_Bootstrap_CIs.csv', index=False)
+    os.makedirs('../results/tables', exist_ok=True)
+    output_df.to_csv('../results/tables/SupplementaryTable1_Bootstrap_CIs.csv', index=False)
 
     # Create LaTeX table
-    with open('outputs/tables/SupplementaryTable1_Bootstrap_CIs.tex', 'w') as f:
+    with open('../results/tables/SupplementaryTable1_Bootstrap_CIs.tex', 'w') as f:
         f.write("% Supplementary Table 1: Bootstrap 95% Confidence Intervals\n")
         f.write("\\begin{table}[h]\n")
         f.write("\\centering\n")
@@ -314,7 +314,7 @@ def main():
     print("="*80 + "\n")
 
     # Check that results exist
-    if not os.path.exists('outputs/results/model_comparison_results.csv'):
+    if not os.path.exists('../results/tables/model_comparison_results.csv'):
         print("Error: Results not found. Please run run_experiments.py first.")
         return
 
@@ -327,8 +327,8 @@ def main():
     print("All figures and tables generated successfully!")
     print("="*80)
     print("\nOutputs saved to:")
-    print("  - outputs/figures/manuscript/")
-    print("  - outputs/tables/")
+    print("  - ../results/figures/manuscript/")
+    print("  - ../results/tables/")
     print("\nFile formats: PNG (600 DPI), PDF (vector)")
 
 
