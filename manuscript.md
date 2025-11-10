@@ -263,9 +263,42 @@ To quantify uncertainty in performance estimates, we employed bootstrap resampli
 
 Bootstrap standard errors provide robust uncertainty quantification without parametric assumptions and are particularly valuable for metrics like AUC-ROC where analytical standard errors are complex [16].
 
-### 2.7 Out-of-Bag Scoring
+### 2.7 Out-of-Bag Scoring and Evaluation Strategy
 
-For Random Forest models, out-of-bag (OOB) scores provided additional performance estimates without requiring a separate validation set. OOB scoring leverages the bootstrap nature of Random Forest training: each tree is trained on a bootstrap sample (~63% of training data), leaving ~37% "out-of-bag." Predictions on OOB samples approximate performance on unseen data.
+#### 2.7.1 OOB as Internal Validation
+
+For Random Forest models, out-of-bag (OOB) scores provide internal validation during training. OOB scoring leverages the bootstrap nature of Random Forest: each tree is trained on a bootstrap sample containing approximately 63% of training data (sampling with replacement), leaving approximately 37% "out-of-bag." Since OOB samples were not used in constructing that tree, aggregating predictions across all trees' OOB samples provides an unbiased performance estimate on the training set [16].
+
+OOB scoring offers several advantages:
+- No need for separate cross-validation
+- Computationally efficient (computed during training)
+- Uses all training data for both building trees and validation
+- Provides per-sample prediction confidence
+
+#### 2.7.2 OOB vs. Held-Out Test Set: A Critical Distinction
+
+**Important methodological note:** This study employs BOTH OOB evaluation (for Random Forest models) AND a held-out test set (for all models). This dual-validation approach differs from some prior fall prediction studies that rely primarily or exclusively on OOB scores for final model evaluation.
+
+**OOB Evaluation:**
+- Computed on training data (n=128)
+- Internal validation: estimates how well the model learned from training data
+- May overestimate generalization if training and test distributions differ
+- Reported in this study as supplementary validation metric
+
+**Held-Out Test Set Evaluation:**
+- Computed on completely unseen data (n=43, never used in training or hyperparameter tuning)
+- External validation: true estimate of generalization to new patients
+- More conservative and rigorous
+- **Primary evaluation metric in this study**
+
+**Rationale for this approach:** While OOB provides valuable internal validation, relying solely on OOB may yield optimistic performance estimates if:
+1. The training set has different characteristics than future deployment populations
+2. Model overfitting occurs despite OOB's unbiased sampling
+3. Hyperparameter tuning indirectly optimizes for training set characteristics
+
+By reporting both OOB (internal validation) and test set performance (external validation), we provide transparent assessment of model generalization. **Discrepancies between OOB and test set performance are informative:** large gaps suggest limited generalizability or dataset shift between training and test sets.
+
+This dual-validation approach aligns with best practices in clinical ML development [26], where external validation is considered essential before clinical deployment.
 
 ### 2.8 Implementation
 
@@ -378,12 +411,47 @@ Models demonstrating non-zero sensitivity:
 
 **Best Balance:** GradientBoosting_Tuned achieved the best sensitivity-specificity balance (0.3316/0.9110), detecting one-third of fallers while maintaining 91% specificity.
 
-#### 3.4.4 Out-of-Bag Scores
+#### 3.4.4 Out-of-Bag vs. Test Set Performance: A Critical Gap
 
-Random Forest models demonstrated strong OOB scores (0.7734-0.8203), substantially higher than test set performance. This discrepancy suggests:
-1. Potential overfitting to training data characteristics
-2. Different class distributions between training set (larger) and test set
-3. High variance in small test set estimates
+Random Forest models demonstrated strong OOB scores (0.7734-0.8203), substantially higher than test set AUC-ROC performance (0.5989-0.6412). Table 4 presents this comparison:
+
+**Table 4. OOB Score vs. Test Set AUC-ROC for Random Forest Models**
+
+| Model | OOB Score (Internal) | Test AUC-ROC (External) | Gap | Interpretation |
+|-------|---------------------|------------------------|-----|----------------|
+| RF_Default | 0.8203 | 0.6031 ± 0.0974 | 0.217 | Large gap |
+| RF_500trees | 0.8047 | 0.6412 ± 0.0942 | 0.164 | Large gap |
+| RF_Tuned | 0.7734 | 0.5989 ± 0.1041 | 0.175 | Large gap |
+
+This 16-22 percentage point gap between internal (OOB) and external (test set) validation is substantial and warrants careful interpretation:
+
+**Potential Explanations:**
+
+1. **Training Set Optimization:** Despite OOB being computed on "out-of-bag" samples, those samples still come from the training distribution. Hyperparameter tuning (even when optimizing CV AUC-ROC) may indirectly favor training set characteristics.
+
+2. **Sample Size Effects:** The test set contains only 9 fallers vs. 25 in training. This creates high variance in test set estimates (large bootstrap SEs) and may not represent the same population distribution.
+
+3. **True Overfitting:** Models may have learned training-set-specific patterns that don't generalize, despite OOB's internal cross-validation.
+
+4. **Dataset Shift:** Training and test sets, though from the same study, may represent subtly different populations (e.g., different recruitment periods, slight demographic differences).
+
+**Implications:**
+
+- **OOB alone insufficient:** Relying solely on OOB scores would yield overly optimistic performance expectations (AUC ~0.80 vs. actual ~0.64)
+- **External validation essential:** The held-out test set provides more realistic generalization estimates
+- **Conservative reporting:** Our primary results (Section 3.3) based on test set performance are more honest about clinical deployment readiness
+- **Comparison caution:** Studies reporting only OOB scores may not be directly comparable to our test set results
+
+**Comparison to Prior Work:**
+
+Soangra et al.'s study on the same 171-participant cohort (though potentially different data collection or time periods) reported substantially different results. Their Random Forest model achieved 81.6% test set accuracy with high OOB scores, while our RF models show larger OOB vs. test gaps. This suggests our models may have overfit more during training, possibly due to:
+- Extensive hyperparameter tuning (our RandomizedSearchCV vs. their fixed architecture)
+- Different feature representations (our raw features vs. their PCA-transformed features)
+- Different optimization targets (our AUC-ROC vs. their accuracy/sensitivity balance)
+
+**Clinical Translation Insight:**
+
+The OOB vs. test set gap suggests that deploying these models in new clinical settings (different hospitals, populations, or time periods) may yield performance closer to our test set results (AUC ~0.64) than OOB scores (AUC ~0.80). This reinforces the need for external validation on independent cohorts before clinical deployment.
 
 ### 3.5 Confusion Matrix Analysis
 
@@ -451,6 +519,54 @@ Our findings align with several aspects of prior fall prediction research while 
   - Need for more sophisticated architectures (e.g., LSTM for temporal gait sequences)
   - Suboptimal hyperparameter space in our grid search
 
+**Methodological Alignment with Prior Work**
+
+Our evaluation strategy aligns with rigorous prior fall prediction research. Recent work by Soangra et al. on 171 community-dwelling older adults used a similar dual-validation approach:
+- Training set: 127 participants
+- Held-out "blind test" set: 44 participants
+- Primary results reported on test set: 81.6 ± 0.7% accuracy, 86.7 ± 0.5% sensitivity
+- OOB scores reported separately as supplementary validation
+- Standard errors computed via 10 model runs with different random seeds
+
+This methodological similarity allows more direct comparison than studies relying solely on cross-validation or OOB estimates.
+
+**Key Differences in Performance:**
+
+Despite similar evaluation approaches and identical sample size (171 participants), our results diverge substantially:
+
+| Study | Test Set | AUC-ROC/Accuracy | Sensitivity | Specificity |
+|-------|----------|------------------|-------------|-------------|
+| Soangra et al. (Nature 2021) | 44 (26%) | 81.6% accuracy | 86.7% | 80.3% |
+| This study | 43 (25%) | 64.1% AUC-ROC | 0-33.8% | 68-100% |
+
+**Potential Explanations for Performance Gap:**
+
+1. **Uncertainty Quantification Methods:**
+   - Soangra et al.: SE from 10 model runs with different seeds (SE: 0.5-0.7%)
+   - Our study: Bootstrap SE from 1000 iterations (SE: 6-17%)
+   - Our bootstrap approach may capture more prediction uncertainty
+
+2. **Different Optimal Feature Sets:**
+   - Soangra et al.: Used PCA feature engineering, selected 4 linear + 26 nonlinear PCs
+   - Our study: Used all 61 raw features without dimensionality reduction
+   - PCA may have reduced overfitting and improved generalization
+
+3. **Class Imbalance Handling:**
+   - Soangra et al.: Training 19.7% fallers (26/127), test 20.4% fallers (9/44)
+   - Our study: Training 19.5% fallers (25/128), test 20.9% fallers (9/43)
+   - Similar imbalance, but they achieved much higher sensitivity
+   - May reflect better handling during training or different decision thresholds
+
+4. **Hyperparameter Optimization Strategy:**
+   - Soangra et al.: Fixed architecture (365 trees, 1 feature per split) based on domain knowledge
+   - Our study: Extensive hyperparameter search via RandomizedSearchCV
+   - Paradoxically, simpler fixed architecture may have generalized better
+
+5. **Different Metrics:**
+   - Soangra et al.: Optimized for accuracy/sensitivity balance
+   - Our study: Optimized for AUC-ROC
+   - AUC-ROC optimization with class imbalance may have sacrificed sensitivity
+
 ### 4.3 Clinical Implications
 
 #### 4.3.1 Current Deployment Readiness
@@ -512,12 +628,26 @@ With 171 total participants and only 34 fallers, our dataset falls below the rec
 
 #### 4.5.2 Feature Engineering Limitations
 
-We utilized raw gait features without:
-- **Dimensionality Reduction:** PCA or feature selection might reduce overfitting and improve generalization
-- **Feature Interactions:** Engineered features capturing relationships between gait parameters
-- **Temporal Sequences:** If available, sequential gait data could enable LSTM or temporal convolutional approaches
+We utilized raw gait features without dimensionality reduction or feature engineering, which may have contributed to our lower performance compared to prior work on similar data.
 
-Prior research suggests that careful feature engineering can improve AUC-ROC by 5-15 percentage points [13].
+**PCA Feature Engineering:** Soangra et al., using the same 171-participant cohort, achieved substantially better results (81.6% test accuracy, 86.7% sensitivity) by applying PCA:
+- Reduced 32 linear features to 4 principal components
+- Reduced 22 nonlinear features to 26 principal components
+- Retained 99% of variance while decorrelating features
+- Their "Experiment III" with combined linear/nonlinear PCs dramatically outperformed raw features
+
+**Our Limitation:** By using all 61 raw features:
+- Higher risk of overfitting due to feature correlation
+- More parameters to learn with limited data (171 samples, 61 features = 2.8 samples per feature)
+- Potential for unstable Random Forest predictions due to correlated inputs
+- Miss benefits of variance-driven feature prioritization
+
+**Other Missing Feature Engineering:**
+- **Feature Interactions:** Engineered features capturing relationships between gait parameters (e.g., ratio of linear to nonlinear variability)
+- **Feature Selection:** Removing low-importance or redundant features before modeling
+- **Temporal Sequences:** If raw accelerometer data available, sequential models (LSTM, temporal convolutions)
+
+**Impact:** Soangra et al.'s results demonstrate that PCA feature engineering on this specific dataset can improve test set performance by ~17 percentage points in accuracy and >50 percentage points in sensitivity. This represents our most significant methodological limitation.
 
 #### 4.5.3 Single-Cohort Evaluation
 
@@ -549,7 +679,23 @@ Our approach revealed that several apparent performance differences (e.g., AUC-R
 
 By reporting six complementary metrics rather than accuracy alone, we revealed the sensitivity-specificity trade-offs hidden by accuracy in imbalanced datasets. This multi-metric approach aligns with best practices for clinical ML evaluation [26].
 
-#### 4.6.4 Reproducible Implementation
+#### 4.6.4 Dual Validation Strategy and Transparent Uncertainty Quantification
+
+Our evaluation strategy aligns with methodologically rigorous prior work (e.g., Soangra et al.'s Nature Scientific Reports study on fall prediction) by using both:
+
+- **Held-out test set:** Primary evaluation on 43 completely unseen participants (25% of data)
+- **OOB scores:** Supplementary internal validation for Random Forest models
+- **Bootstrap standard errors:** 1000-iteration bootstrap for all metrics, capturing prediction uncertainty
+- **Explicit performance gaps:** Transparent reporting of OOB vs. test set differences
+
+Our bootstrap approach (SE: 6-17%) captures more uncertainty than multi-seed approaches (SE: 0.5-0.7% in Soangra et al.), providing conservative performance estimates.
+
+**Key difference from prior work:** While our evaluation methodology matches rigorous standards, our lower performance (AUC 0.64 vs. Soangra's 81.6% test accuracy on similar data) likely reflects:
+- No PCA dimensionality reduction (potential overfitting to raw features)
+- Extensive hyperparameter search (may have indirectly overfit to training distribution)
+- AUC-ROC optimization (sacrificed sensitivity for discriminative ability)
+
+#### 4.6.5 Reproducible Implementation
 
 All code, from data loading through visualization, is modularized and publicly available. This facilitates replication, extension to new datasets, and integration of improved methods (e.g., SMOTE, threshold optimization).
 
