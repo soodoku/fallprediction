@@ -48,7 +48,7 @@ def create_output_dirs():
     print("Output directories created/verified.")
 
 
-def train_random_forest_models(X_train, y_train, random_state=42):
+def train_random_forest_models(X_train, y_train, X_test, y_test, random_state=42):
     """
     Train Random Forest models with different configurations.
 
