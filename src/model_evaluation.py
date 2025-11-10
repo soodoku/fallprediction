@@ -19,6 +19,9 @@ from typing import Tuple, Dict, Optional, List
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import optimal cutoffs package
+from optimal_cutoffs import get_optimal_threshold
+
 # Import constants for consistent metric naming
 from .constants import (
     METRIC_AUC_ROC, METRIC_AUC_PR, METRIC_ACCURACY, METRIC_SENSITIVITY,
@@ -85,6 +88,51 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: Optional[
             metrics[METRIC_AUC_PR] = np.nan
 
     return metrics
+
+
+def find_optimal_threshold(y_true: np.ndarray, y_proba: np.ndarray) -> Tuple[float, float]:
+    """
+    Find the optimal classification threshold that maximizes F1 score.
+
+    Uses the optimal_classification_cutoffs package which implements an
+    efficient O(n log n) algorithm for finding the exact threshold that
+    maximizes F1 score.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        True binary labels (0 or 1)
+    y_proba : np.ndarray
+        Predicted probabilities for the positive class
+
+    Returns
+    -------
+    Tuple[float, float]
+        - optimal_threshold: The threshold that maximizes F1 score
+        - max_f1: The maximum F1 score achieved at this threshold
+
+    Notes
+    -----
+    This implementation uses the optimize_f1_binary function from the
+    optimal_classification_cutoffs package, which finds the exact optimal
+    threshold through efficient piecewise optimization.
+
+    For imbalanced datasets (like fall prediction with ~20% positive class),
+    the optimal threshold is typically lower than the default 0.5, allowing
+    for better sensitivity while maintaining reasonable specificity.
+    """
+    # Use the package to find optimal F1 threshold
+    result = get_optimal_threshold(y_true, y_proba, metric='f1')
+
+    # The result object contains the optimal threshold and can generate predictions
+    # For binary classification, result.thresholds is an array with one element
+    optimal_threshold = result.thresholds[0] if hasattr(result.thresholds, '__len__') else result.thresholds
+
+    # Calculate the F1 score at this threshold
+    y_pred_optimal = result.predict(y_proba)
+    max_f1 = f1_score(y_true, y_pred_optimal)
+
+    return optimal_threshold, max_f1
 
 
 def bootstrap_metrics(
@@ -230,6 +278,10 @@ def evaluate_model(
     """
     Comprehensive model evaluation with bootstrap standard errors.
 
+    Evaluates model performance using both default (0.5) and optimal F1-based
+    thresholds. The optimal threshold maximizes F1 score, which often provides
+    better sensitivity-specificity balance for imbalanced datasets.
+
     Parameters:
     -----------
     model : sklearn estimator
@@ -253,12 +305,17 @@ def evaluate_model(
 
     Returns:
     --------
-    dict with comprehensive evaluation results
+    dict with comprehensive evaluation results including:
+        - point_estimates: Metrics at default 0.5 threshold
+        - bootstrap_stats: Bootstrap statistics at default threshold
+        - optimal_threshold: Best threshold for F1 score
+        - optimal_metrics: Point estimates at optimal threshold
+        - optimal_bootstrap_stats: Bootstrap statistics at optimal threshold
     """
     results = {'model_name': model_name}
 
-    # Get predictions
-    y_pred = model.predict(X_test)
+    # Get predictions with default 0.5 threshold
+    y_pred_default = model.predict(X_test)
 
     # Get probabilities if available
     if hasattr(model, 'predict_proba'):
@@ -268,17 +325,42 @@ def evaluate_model(
     else:
         y_proba = None
 
-    # Calculate point estimates
-    point_metrics = calculate_metrics(y_test, y_pred, y_proba)
+    # Calculate point estimates at default threshold (0.5)
+    point_metrics = calculate_metrics(y_test, y_pred_default, y_proba)
     results['point_estimates'] = point_metrics
 
-    # Calculate bootstrap statistics
+    # Calculate bootstrap statistics at default threshold
     bootstrap_stats = bootstrap_metrics(
-        y_test, y_pred, y_proba,
+        y_test, y_pred_default, y_proba,
         n_bootstrap=n_bootstrap,
         random_state=random_state
     )
     results['bootstrap_stats'] = bootstrap_stats
+
+    # Find optimal threshold and evaluate at that threshold
+    if y_proba is not None:
+        # Find optimal F1 threshold
+        optimal_threshold, max_f1 = find_optimal_threshold(y_test, y_proba)
+        results['optimal_threshold'] = optimal_threshold
+
+        # Generate predictions at optimal threshold
+        y_pred_optimal = (y_proba >= optimal_threshold).astype(int)
+
+        # Calculate point estimates at optimal threshold
+        optimal_metrics = calculate_metrics(y_test, y_pred_optimal, y_proba)
+        results['optimal_point_estimates'] = optimal_metrics
+
+        # Calculate bootstrap statistics at optimal threshold
+        optimal_bootstrap_stats = bootstrap_metrics(
+            y_test, y_pred_optimal, y_proba,
+            n_bootstrap=n_bootstrap,
+            random_state=random_state
+        )
+        results['optimal_bootstrap_stats'] = optimal_bootstrap_stats
+    else:
+        results['optimal_threshold'] = None
+        results['optimal_point_estimates'] = None
+        results['optimal_bootstrap_stats'] = None
 
     # Get OOB score if available
     if use_oob and hasattr(model, 'oob_score_'):
@@ -287,7 +369,7 @@ def evaluate_model(
         results['oob_score'] = None
 
     # Store predictions and probabilities
-    results['y_pred'] = y_pred
+    results['y_pred'] = y_pred_default  # Default threshold predictions
     results['y_proba'] = y_proba
     results['y_true'] = y_test
 
@@ -376,6 +458,107 @@ def format_results_table(results_list: List[Dict]) -> pd.DataFrame:
     other_cols.extend(['TP', 'TN', 'FP', 'FN'])
 
     final_cols = other_cols + metric_cols
+    final_cols = [c for c in final_cols if c in df.columns]
+
+    return df[final_cols]
+
+
+def format_threshold_comparison(results_list: List[Dict]) -> pd.DataFrame:
+    """
+    Format a comparison table showing metrics at both default (0.5) and optimal thresholds.
+
+    Parameters
+    ----------
+    results_list : List[Dict]
+        List of results dictionaries from evaluate_model()
+
+    Returns
+    -------
+    pd.DataFrame
+        Comparison table with columns for model name, threshold, optimal threshold value,
+        and all metrics at both thresholds
+
+    Notes
+    -----
+    This table is useful for understanding the trade-offs between using the default
+    0.5 threshold versus the optimal F1-maximizing threshold. For imbalanced datasets,
+    the optimal threshold is often lower than 0.5, which typically increases sensitivity
+    at the cost of some specificity.
+    """
+    rows = []
+
+    for result in results_list:
+        model_name = result['model_name']
+
+        # Add row for default threshold (0.5)
+        default_stats = result['bootstrap_stats']
+        default_point = result['point_estimates']
+
+        default_row = {
+            'Model': model_name,
+            'Threshold': 'Default (0.5)',
+            'Threshold_Value': 0.5
+        }
+
+        # Add metrics
+        for metric in [METRIC_SENSITIVITY, METRIC_SPECIFICITY, METRIC_PRECISION, METRIC_F1, METRIC_ACCURACY]:
+            metric_upper = get_upper_name(metric)
+            if metric in default_stats:
+                mean = default_stats[metric]['mean']
+                se = default_stats[metric]['se']
+                default_row[metric_upper] = mean
+                default_row[f'{metric_upper}_SE'] = se
+
+        # Add confusion matrix
+        default_row['TP'] = default_point['tp']
+        default_row['TN'] = default_point['tn']
+        default_row['FP'] = default_point['fp']
+        default_row['FN'] = default_point['fn']
+
+        rows.append(default_row)
+
+        # Add row for optimal threshold (if available)
+        if result['optimal_threshold'] is not None:
+            optimal_stats = result['optimal_bootstrap_stats']
+            optimal_point = result['optimal_point_estimates']
+            optimal_threshold = result['optimal_threshold']
+
+            optimal_row = {
+                'Model': model_name,
+                'Threshold': 'Optimal (F1)',
+                'Threshold_Value': optimal_threshold
+            }
+
+            # Add metrics
+            for metric in [METRIC_SENSITIVITY, METRIC_SPECIFICITY, METRIC_PRECISION, METRIC_F1, METRIC_ACCURACY]:
+                metric_upper = get_upper_name(metric)
+                if metric in optimal_stats:
+                    mean = optimal_stats[metric]['mean']
+                    se = optimal_stats[metric]['se']
+                    optimal_row[metric_upper] = mean
+                    optimal_row[f'{metric_upper}_SE'] = se
+
+            # Add confusion matrix
+            optimal_row['TP'] = optimal_point['tp']
+            optimal_row['TN'] = optimal_point['tn']
+            optimal_row['FP'] = optimal_point['fp']
+            optimal_row['FN'] = optimal_point['fn']
+
+            rows.append(optimal_row)
+
+    # Create DataFrame
+    df = pd.DataFrame(rows)
+
+    # Reorder columns
+    base_cols = ['Model', 'Threshold', 'Threshold_Value']
+    metric_cols = []
+    for metric in ['SENSITIVITY', 'SPECIFICITY', 'PRECISION', 'F1', 'ACCURACY']:
+        if metric in df.columns:
+            metric_cols.extend([metric, f'{metric}_SE'])
+
+    confusion_cols = ['TP', 'TN', 'FP', 'FN']
+
+    final_cols = base_cols + metric_cols + confusion_cols
     final_cols = [c for c in final_cols if c in df.columns]
 
     return df[final_cols]

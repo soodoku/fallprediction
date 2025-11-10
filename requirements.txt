@@ -6,3 +6,4 @@ seaborn>=0.12.0
 xgboost>=2.0.0
 imbalanced-learn>=0.11.0
 scipy>=1.11.0
+optimal-classification-cutoffs>=0.1.0
