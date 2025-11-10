@@ -219,7 +219,7 @@ def plot_comprehensive_comparison(
     1. ROC curves
     2. AUC-ROC comparison bars
     3. Sensitivity & Specificity comparison
-    4. All metrics radar chart
+    4. All metrics grouped bar chart
 
     Parameters:
     -----------
