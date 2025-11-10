@@ -1,14 +1,28 @@
 """
 Visualization module for fall prediction experiments.
+
+This module provides comprehensive visualization functions for model evaluation:
+- ROC curves (Receiver Operating Characteristic)
+- Precision-Recall curves
+- Metrics comparison with error bars
+- Confusion matrices
+- Multi-panel comprehensive comparisons
 """
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import List, Dict
+from typing import List, Dict, Optional
 import warnings
 warnings.filterwarnings('ignore')
+
+# Import constants for consistent metric naming
+from .constants import (
+    METRIC_AUC_ROC, METRIC_AUC_PR, METRIC_ACCURACY, METRIC_SENSITIVITY,
+    METRIC_SPECIFICITY, METRIC_PRECISION, METRIC_F1,
+    get_upper_name, get_display_name
+)
 
 # Set style
 sns.set_style("whitegrid")
@@ -17,18 +31,28 @@ plt.rcParams['savefig.dpi'] = 300
 plt.rcParams['font.size'] = 10
 
 
-def plot_roc_curves(results_list: List[Dict], save_path: str = None, figsize: tuple = (10, 8)):
+def plot_roc_curves(
+    results_list: List[Dict],
+    save_path: Optional[str] = None,
+    figsize: tuple = (10, 8)
+):
     """
-    Plot ROC curves for multiple models.
+    Plot ROC (Receiver Operating Characteristic) curves for multiple models.
 
-    Parameters:
-    -----------
-    results_list : list
-        List of results from evaluate_model()
+    Parameters
+    ----------
+    results_list : List[Dict]
+        List of results dictionaries from evaluate_model()
     save_path : str, optional
         Path to save the figure
-    figsize : tuple
-        Figure size
+    figsize : tuple, default=(10, 8)
+        Figure size in inches (width, height)
+
+    Notes
+    -----
+    The ROC curve shows the trade-off between True Positive Rate (sensitivity)
+    and False Positive Rate (1 - specificity). AUC-ROC values are displayed
+    with bootstrap standard errors.
     """
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -38,13 +62,15 @@ def plot_roc_curves(results_list: List[Dict], save_path: str = None, figsize: tu
         if result['y_proba'] is not None:
             from sklearn.metrics import roc_curve
             fpr, tpr, _ = roc_curve(result['y_true'], result['y_proba'])
-            auc_mean = result['bootstrap_stats']['auc_roc']['mean']
-            auc_se = result['bootstrap_stats']['auc_roc']['se']
 
-            label = f"{result['model_name']} (AUC={auc_mean:.3f}±{auc_se:.3f})"
+            # Use constants for accessing metrics
+            auc_mean = result['bootstrap_stats'][METRIC_AUC_ROC]['mean']
+            auc_se = result['bootstrap_stats'][METRIC_AUC_ROC]['se']
+
+            label = f"{result['model_name']} (AUC-ROC={auc_mean:.3f}±{auc_se:.3f})"
             ax.plot(fpr, tpr, color=colors[i], lw=2, label=label)
 
-    # Plot diagonal
+    # Plot diagonal (random classifier)
     ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Random Classifier')
 
     ax.set_xlabel('False Positive Rate (1 - Specificity)', fontsize=12)
@@ -62,28 +88,110 @@ def plot_roc_curves(results_list: List[Dict], save_path: str = None, figsize: tu
     plt.close()
 
 
+def plot_pr_curves(
+    results_list: List[Dict],
+    save_path: Optional[str] = None,
+    figsize: tuple = (10, 8)
+):
+    """
+    Plot Precision-Recall curves for multiple models.
+
+    Parameters
+    ----------
+    results_list : List[Dict]
+        List of results dictionaries from evaluate_model()
+    save_path : str, optional
+        Path to save the figure
+    figsize : tuple, default=(10, 8)
+        Figure size in inches (width, height)
+
+    Notes
+    -----
+    The Precision-Recall curve shows the trade-off between precision and recall
+    at different classification thresholds. AUC-PR (Average Precision) values
+    are displayed with bootstrap standard errors. This metric is particularly
+    useful for imbalanced datasets.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    colors = plt.cm.Set2(np.linspace(0, 1, len(results_list)))
+
+    for i, result in enumerate(results_list):
+        if result['y_proba'] is not None:
+            from sklearn.metrics import precision_recall_curve
+            precision, recall, _ = precision_recall_curve(
+                result['y_true'], result['y_proba']
+            )
+
+            # Use constants for accessing metrics
+            if METRIC_AUC_PR in result['bootstrap_stats']:
+                auc_mean = result['bootstrap_stats'][METRIC_AUC_PR]['mean']
+                auc_se = result['bootstrap_stats'][METRIC_AUC_PR]['se']
+
+                label = f"{result['model_name']} (AUC-PR={auc_mean:.3f}±{auc_se:.3f})"
+                ax.plot(recall, precision, color=colors[i], lw=2, label=label)
+
+    # Calculate baseline (random classifier for imbalanced data)
+    # For binary classification, baseline is the proportion of positive samples
+    if results_list and results_list[0]['y_true'] is not None:
+        baseline = np.mean(results_list[0]['y_true'])
+        ax.axhline(y=baseline, color='k', linestyle='--', lw=1,
+                  label=f'Random Classifier (baseline={baseline:.3f})')
+
+    ax.set_xlabel('Recall (Sensitivity)', fontsize=12)
+    ax.set_ylabel('Precision', fontsize=12)
+    ax.set_title('Precision-Recall Curves - Model Comparison', fontsize=14, fontweight='bold')
+    ax.legend(loc='best', fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+        print(f"Precision-Recall curves saved to: {save_path}")
+
+    plt.close()
+
+
 def plot_metrics_comparison(
     results_df: pd.DataFrame,
-    metrics: List[str] = None,
-    save_path: str = None,
+    metrics: Optional[List[str]] = None,
+    save_path: Optional[str] = None,
     figsize: tuple = (14, 10)
 ):
     """
     Plot bar charts comparing metrics across models with error bars.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     results_df : pd.DataFrame
         Results table from format_results_table()
-    metrics : list, optional
-        List of metrics to plot (default: ['AUC_ROC', 'ACCURACY', 'SENSITIVITY', 'SPECIFICITY', 'F1'])
+    metrics : List[str], optional
+        List of metrics to plot. If None, defaults to:
+        ['AUC_ROC', 'AUC_PR', 'ACCURACY', 'SENSITIVITY', 'SPECIFICITY', 'PRECISION', 'F1']
     save_path : str, optional
         Path to save the figure
-    figsize : tuple
-        Figure size
+    figsize : tuple, default=(14, 10)
+        Figure size in inches (width, height)
+
+    Notes
+    -----
+    Each metric is displayed as a bar chart with bootstrap standard error bars.
+    Values are labeled on top of each bar for easy comparison.
     """
     if metrics is None:
-        metrics = ['AUC_ROC', 'ACCURACY', 'SENSITIVITY', 'SPECIFICITY', 'F1']
+        # Use constants to build default metric list
+        metrics = [
+            get_upper_name(METRIC_AUC_ROC),
+            get_upper_name(METRIC_AUC_PR),
+            get_upper_name(METRIC_ACCURACY),
+            get_upper_name(METRIC_SENSITIVITY),
+            get_upper_name(METRIC_SPECIFICITY),
+            get_upper_name(METRIC_PRECISION),
+            get_upper_name(METRIC_F1)
+        ]
 
     # Filter to available metrics
     available_metrics = [m for m in metrics if m in results_df.columns]
@@ -243,8 +351,10 @@ def plot_comprehensive_comparison(
         if result['y_proba'] is not None:
             from sklearn.metrics import roc_curve
             fpr, tpr, _ = roc_curve(result['y_true'], result['y_proba'])
-            auc_mean = result['bootstrap_stats']['auc_roc']['mean']
-            auc_se = result['bootstrap_stats']['auc_roc']['se']
+
+            # Use constants for accessing metrics
+            auc_mean = result['bootstrap_stats'][METRIC_AUC_ROC]['mean']
+            auc_se = result['bootstrap_stats'][METRIC_AUC_ROC]['se']
             label = f"{result['model_name']} ({auc_mean:.3f}±{auc_se:.3f})"
             ax1.plot(fpr, tpr, color=colors[i], lw=2.5, label=label)
 
@@ -255,28 +365,40 @@ def plot_comprehensive_comparison(
     ax1.legend(loc='lower right', fontsize=9)
     ax1.grid(True, alpha=0.3)
 
-    # Panel 2: AUC-ROC Comparison
+    # Panel 2: AUC Comparison (both ROC and PR)
     ax2 = fig.add_subplot(gs[0, 1])
-    if 'AUC_ROC' in results_df.columns:
-        values = results_df['AUC_ROC'].values
-        errors = results_df['AUC_ROC_SE'].values
-        x_pos = np.arange(len(results_df))
+    auc_roc_col = get_upper_name(METRIC_AUC_ROC)
+    auc_pr_col = get_upper_name(METRIC_AUC_PR)
 
-        bars = ax2.barh(x_pos, values, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
-        ax2.errorbar(values, x_pos, xerr=errors, fmt='none', ecolor='black',
-                    capsize=5, capthick=2, alpha=0.7)
+    if auc_roc_col in results_df.columns or auc_pr_col in results_df.columns:
+        x_pos = np.arange(len(results_df))
+        width = 0.35
+
+        # Plot AUC-ROC if available
+        if auc_roc_col in results_df.columns:
+            values_roc = results_df[auc_roc_col].values
+            errors_roc = results_df[f'{auc_roc_col}_SE'].values
+            ax2.barh(x_pos - width/2, values_roc, width, label='AUC-ROC',
+                    color='steelblue', alpha=0.8, edgecolor='black', linewidth=1.5)
+            ax2.errorbar(values_roc, x_pos - width/2, xerr=errors_roc, fmt='none',
+                        ecolor='black', capsize=4, capthick=1.5, alpha=0.7)
+
+        # Plot AUC-PR if available
+        if auc_pr_col in results_df.columns:
+            values_pr = results_df[auc_pr_col].values
+            errors_pr = results_df[f'{auc_pr_col}_SE'].values
+            ax2.barh(x_pos + width/2, values_pr, width, label='AUC-PR',
+                    color='coral', alpha=0.8, edgecolor='black', linewidth=1.5)
+            ax2.errorbar(values_pr, x_pos + width/2, xerr=errors_pr, fmt='none',
+                        ecolor='black', capsize=4, capthick=1.5, alpha=0.7)
 
         ax2.set_yticks(x_pos)
         ax2.set_yticklabels(results_df['Model'])
-        ax2.set_xlabel('AUC-ROC', fontsize=11, fontweight='bold')
-        ax2.set_title('AUC-ROC Comparison', fontsize=13, fontweight='bold')
+        ax2.set_xlabel('AUC Score', fontsize=11, fontweight='bold')
+        ax2.set_title('AUC Comparison', fontsize=13, fontweight='bold')
         ax2.set_xlim([0, 1.1])
+        ax2.legend(fontsize=10)
         ax2.grid(True, alpha=0.3, axis='x')
-
-        # Add value labels
-        for i, (val, err) in enumerate(zip(values, errors)):
-            ax2.text(val + 0.02, i, f'{val:.3f}±{err:.3f}',
-                    va='center', fontsize=9, fontweight='bold')
 
     # Panel 3: Sensitivity & Specificity
     ax3 = fig.add_subplot(gs[1, 0])
@@ -346,18 +468,31 @@ def plot_comprehensive_comparison(
     plt.close()
 
 
-def save_all_visualizations(results_df: pd.DataFrame, results_list: List[Dict], output_dir: str = 'outputs/figures'):
+def save_all_visualizations(
+    results_df: pd.DataFrame,
+    results_list: List[Dict],
+    output_dir: str = 'outputs/figures'
+):
     """
-    Generate and save all visualizations.
+    Generate and save all visualizations including ROC, PR curves, and comparisons.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     results_df : pd.DataFrame
-        Results table
-    results_list : list
-        List of results from evaluate_model()
-    output_dir : str
-        Directory to save figures
+        Results table from format_results_table()
+    results_list : List[Dict]
+        List of results dictionaries from evaluate_model()
+    output_dir : str, default='outputs/figures'
+        Directory to save figures (will be created if it doesn't exist)
+
+    Notes
+    -----
+    This function generates:
+    - ROC curves (roc_curves.png)
+    - Precision-Recall curves (pr_curves.png)
+    - Metrics comparison bar charts (metrics_comparison.png)
+    - Confusion matrices (confusion_matrices.png)
+    - Comprehensive 4-panel comparison (comprehensive_comparison.png)
     """
     import os
     os.makedirs(output_dir, exist_ok=True)
@@ -366,6 +501,9 @@ def save_all_visualizations(results_df: pd.DataFrame, results_list: List[Dict], 
 
     # ROC Curves
     plot_roc_curves(results_list, save_path=f'{output_dir}/roc_curves.png')
+
+    # Precision-Recall Curves
+    plot_pr_curves(results_list, save_path=f'{output_dir}/pr_curves.png')
 
     # Metrics comparison
     plot_metrics_comparison(results_df, save_path=f'{output_dir}/metrics_comparison.png')

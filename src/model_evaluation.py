@@ -1,58 +1,88 @@
 """
 Model evaluation module with bootstrap standard error calculations.
+
+This module provides comprehensive model evaluation metrics including:
+- AUC-ROC (Area Under the Receiver Operating Characteristic curve)
+- AUC-PR (Area Under the Precision-Recall curve)
+- Accuracy, Sensitivity, Specificity, Precision, F1 Score
+- Bootstrap-based standard errors and confidence intervals
 """
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score, roc_auc_score, roc_curve, auc,
-    confusion_matrix, f1_score, precision_score, recall_score
+    confusion_matrix, f1_score, precision_score, recall_score,
+    precision_recall_curve, average_precision_score
 )
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import constants for consistent metric naming
+from .constants import (
+    METRIC_AUC_ROC, METRIC_AUC_PR, METRIC_ACCURACY, METRIC_SENSITIVITY,
+    METRIC_SPECIFICITY, METRIC_PRECISION, METRIC_F1, CORE_METRICS,
+    get_upper_name, get_display_name
+)
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: Optional[np.ndarray] = None) -> dict:
+
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: Optional[np.ndarray] = None) -> Dict[str, float]:
     """
     Calculate comprehensive classification metrics.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     y_true : np.ndarray
-        True labels
+        True labels (binary: 0 or 1)
     y_pred : np.ndarray
-        Predicted labels
+        Predicted labels (binary: 0 or 1)
     y_proba : np.ndarray, optional
-        Predicted probabilities for positive class
+        Predicted probabilities for positive class (between 0 and 1)
 
-    Returns:
-    --------
-    dict with metrics:
-        accuracy, sensitivity, specificity, precision, f1, auc_roc
+    Returns
+    -------
+    Dict[str, float]
+        Dictionary with the following keys:
+        - accuracy: Overall classification accuracy
+        - sensitivity: True positive rate (recall)
+        - specificity: True negative rate
+        - precision: Positive predictive value
+        - f1: F1 score (harmonic mean of precision and recall)
+        - auc_roc: Area under ROC curve (if y_proba provided)
+        - auc_pr: Area under Precision-Recall curve (if y_proba provided)
+        - tp, tn, fp, fn: Confusion matrix elements
     """
     # Get confusion matrix
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
 
-    # Calculate metrics
+    # Calculate core metrics using constants
     metrics = {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'sensitivity': tp / (tp + fn) if (tp + fn) > 0 else 0.0,  # Recall / True Positive Rate
-        'specificity': tn / (tn + fp) if (tn + fp) > 0 else 0.0,  # True Negative Rate
-        'precision': precision_score(y_true, y_pred, zero_division=0),
-        'f1': f1_score(y_true, y_pred, zero_division=0),
+        METRIC_ACCURACY: accuracy_score(y_true, y_pred),
+        METRIC_SENSITIVITY: tp / (tp + fn) if (tp + fn) > 0 else 0.0,  # Recall / TPR
+        METRIC_SPECIFICITY: tn / (tn + fp) if (tn + fp) > 0 else 0.0,  # TNR
+        METRIC_PRECISION: precision_score(y_true, y_pred, zero_division=0),
+        METRIC_F1: f1_score(y_true, y_pred, zero_division=0),
         'tp': int(tp),
         'tn': int(tn),
         'fp': int(fp),
         'fn': int(fn)
     }
 
-    # Add AUC-ROC if probabilities provided
+    # Add AUC metrics if probabilities provided
     if y_proba is not None:
         try:
-            metrics['auc_roc'] = roc_auc_score(y_true, y_proba)
-        except ValueError:
-            metrics['auc_roc'] = np.nan
+            # AUC-ROC: Area under Receiver Operating Characteristic curve
+            metrics[METRIC_AUC_ROC] = roc_auc_score(y_true, y_proba)
+        except (ValueError, RuntimeWarning):
+            metrics[METRIC_AUC_ROC] = np.nan
+
+        try:
+            # AUC-PR: Area under Precision-Recall curve
+            # Using average_precision_score which is equivalent to AUC-PR
+            metrics[METRIC_AUC_PR] = average_precision_score(y_true, y_proba)
+        except (ValueError, RuntimeWarning):
+            metrics[METRIC_AUC_PR] = np.nan
 
     return metrics
 
@@ -65,25 +95,39 @@ def bootstrap_metrics(
     random_state: int = 42
 ) -> Dict[str, Dict[str, float]]:
     """
-    Calculate metrics with bootstrap standard errors.
+    Calculate metrics with bootstrap standard errors and confidence intervals.
 
-    Parameters:
-    -----------
+    This function performs bootstrap resampling to estimate the uncertainty
+    in classification metrics. For each bootstrap sample, all metrics are
+    recalculated, and the distribution is used to compute standard errors
+    and 95% confidence intervals.
+
+    Parameters
+    ----------
     y_true : np.ndarray
         True labels
     y_pred : np.ndarray
         Predicted labels
     y_proba : np.ndarray, optional
-        Predicted probabilities
-    n_bootstrap : int
+        Predicted probabilities for positive class
+    n_bootstrap : int, default=1000
         Number of bootstrap iterations
-    random_state : int
-        Random seed
+    random_state : int, default=42
+        Random seed for reproducibility
 
-    Returns:
-    --------
-    dict with keys being metric names and values being:
-        {'mean': float, 'se': float, 'ci_lower': float, 'ci_upper': float}
+    Returns
+    -------
+    Dict[str, Dict[str, float]]
+        Dictionary with metric names as keys, each containing:
+        - 'mean': Mean value across bootstrap samples
+        - 'se': Standard error (SD of bootstrap distribution)
+        - 'ci_lower': Lower bound of 95% CI (2.5th percentile)
+        - 'ci_upper': Upper bound of 95% CI (97.5th percentile)
+
+    Notes
+    -----
+    Bootstrap samples with only one class are skipped. If too many samples
+    are skipped, this may indicate an issue with the dataset or model.
     """
     # Convert to numpy arrays if needed
     y_true = np.asarray(y_true)
@@ -94,16 +138,20 @@ def bootstrap_metrics(
     np.random.seed(random_state)
     n_samples = len(y_true)
 
-    # Storage for bootstrap samples
+    # Storage for bootstrap samples using constants
     bootstrap_results = {
-        'accuracy': [],
-        'sensitivity': [],
-        'specificity': [],
-        'precision': [],
-        'f1': []
+        METRIC_ACCURACY: [],
+        METRIC_SENSITIVITY: [],
+        METRIC_SPECIFICITY: [],
+        METRIC_PRECISION: [],
+        METRIC_F1: []
     }
     if y_proba is not None:
-        bootstrap_results['auc_roc'] = []
+        bootstrap_results[METRIC_AUC_ROC] = []
+        bootstrap_results[METRIC_AUC_PR] = []
+
+    # Track skipped samples
+    skipped_samples = 0
 
     # Perform bootstrap
     for i in range(n_bootstrap):
@@ -118,17 +166,33 @@ def bootstrap_metrics(
         try:
             metrics = calculate_metrics(y_true_boot, y_pred_boot, y_proba_boot)
 
-            bootstrap_results['accuracy'].append(metrics['accuracy'])
-            bootstrap_results['sensitivity'].append(metrics['sensitivity'])
-            bootstrap_results['specificity'].append(metrics['specificity'])
-            bootstrap_results['precision'].append(metrics['precision'])
-            bootstrap_results['f1'].append(metrics['f1'])
+            # Append core metrics
+            bootstrap_results[METRIC_ACCURACY].append(metrics[METRIC_ACCURACY])
+            bootstrap_results[METRIC_SENSITIVITY].append(metrics[METRIC_SENSITIVITY])
+            bootstrap_results[METRIC_SPECIFICITY].append(metrics[METRIC_SPECIFICITY])
+            bootstrap_results[METRIC_PRECISION].append(metrics[METRIC_PRECISION])
+            bootstrap_results[METRIC_F1].append(metrics[METRIC_F1])
 
-            if y_proba is not None and not np.isnan(metrics['auc_roc']):
-                bootstrap_results['auc_roc'].append(metrics['auc_roc'])
-        except ValueError:
-            # Skip bootstrap samples that might have only one class, which can cause metric errors.
+            # Append AUC metrics if available and valid
+            if y_proba is not None:
+                if not np.isnan(metrics[METRIC_AUC_ROC]):
+                    bootstrap_results[METRIC_AUC_ROC].append(metrics[METRIC_AUC_ROC])
+                if not np.isnan(metrics[METRIC_AUC_PR]):
+                    bootstrap_results[METRIC_AUC_PR].append(metrics[METRIC_AUC_PR])
+        except (ValueError, RuntimeWarning):
+            # Skip bootstrap samples with only one class
+            skipped_samples += 1
             continue
+
+    # Warn if too many samples were skipped
+    if skipped_samples > 0:
+        skip_pct = 100 * skipped_samples / n_bootstrap
+        if skip_pct > 10:
+            warnings.warn(
+                f"Skipped {skipped_samples}/{n_bootstrap} ({skip_pct:.1f}%) "
+                f"bootstrap samples due to single-class resamples. "
+                f"This may indicate dataset imbalance issues."
+            )
 
     # Calculate statistics
     results = {}
@@ -230,18 +294,29 @@ def evaluate_model(
     return results
 
 
-def format_results_table(results_list: list) -> pd.DataFrame:
+def format_results_table(results_list: List[Dict]) -> pd.DataFrame:
     """
-    Format evaluation results into a clean table.
+    Format evaluation results into a clean table with metrics and standard errors.
 
-    Parameters:
-    -----------
-    results_list : list
+    Parameters
+    ----------
+    results_list : List[Dict]
         List of results dictionaries from evaluate_model()
 
-    Returns:
-    --------
-    pd.DataFrame with formatted results
+    Returns
+    -------
+    pd.DataFrame
+        Formatted results table with columns:
+        - Model: Model name
+        - OOB_Score: Out-of-bag score (if available)
+        - TP, TN, FP, FN: Confusion matrix elements
+        - For each metric: [METRIC] and [METRIC]_SE columns
+
+    Notes
+    -----
+    The table includes both AUC-ROC and AUC-PR metrics when probabilities
+    are available. Metrics are ordered by importance: AUC metrics first,
+    followed by accuracy, sensitivity, specificity, precision, and F1.
     """
     rows = []
 
@@ -251,16 +326,23 @@ def format_results_table(results_list: list) -> pd.DataFrame:
 
         row = {'Model': model_name}
 
-        # Add metrics with mean ± SE format
-        for metric in ['auc_roc', 'accuracy', 'sensitivity', 'specificity', 'precision', 'f1']:
+        # Add metrics with mean ± SE format using constants
+        # Include both AUC-ROC and AUC-PR
+        metrics_to_add = [
+            METRIC_AUC_ROC, METRIC_AUC_PR, METRIC_ACCURACY,
+            METRIC_SENSITIVITY, METRIC_SPECIFICITY, METRIC_PRECISION, METRIC_F1
+        ]
+
+        for metric in metrics_to_add:
+            metric_upper = get_upper_name(metric)
             if metric in bootstrap_stats:
                 mean = bootstrap_stats[metric]['mean']
                 se = bootstrap_stats[metric]['se']
-                row[metric.upper()] = mean
-                row[f'{metric.upper()}_SE'] = se
+                row[metric_upper] = mean
+                row[f'{metric_upper}_SE'] = se
             else:
-                row[metric.upper()] = np.nan
-                row[f'{metric.upper()}_SE'] = np.nan
+                row[metric_upper] = np.nan
+                row[f'{metric_upper}_SE'] = np.nan
 
         # Add OOB score if available
         if result['oob_score'] is not None:
@@ -280,7 +362,11 @@ def format_results_table(results_list: list) -> pd.DataFrame:
 
     # Reorder columns for better presentation
     metric_cols = []
-    for metric in ['AUC_ROC', 'ACCURACY', 'SENSITIVITY', 'SPECIFICITY', 'PRECISION', 'F1']:
+    metric_order = [
+        'AUC_ROC', 'AUC_PR', 'ACCURACY', 'SENSITIVITY',
+        'SPECIFICITY', 'PRECISION', 'F1'
+    ]
+    for metric in metric_order:
         if metric in df.columns:
             metric_cols.extend([metric, f'{metric}_SE'])
 
@@ -297,14 +383,19 @@ def format_results_table(results_list: list) -> pd.DataFrame:
 
 def print_results_summary(results_df: pd.DataFrame, title: str = "Model Comparison Results"):
     """
-    Print a formatted summary of results.
+    Print a formatted summary of results with key metrics highlighted.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     results_df : pd.DataFrame
         Results table from format_results_table()
-    title : str
-        Title for the summary
+    title : str, default="Model Comparison Results"
+        Title for the summary output
+
+    Notes
+    -----
+    This function highlights the best-performing models for AUC-ROC, AUC-PR,
+    accuracy, and sensitivity metrics.
     """
     print("\n" + "="*100)
     print(f"{title:^100}")
@@ -318,41 +409,71 @@ def print_results_summary(results_df: pd.DataFrame, title: str = "Model Comparis
     print(results_df.to_string(index=False))
     print("="*100)
 
-    # Find best models
-    if 'AUC_ROC' in results_df.columns:
-        best_auc_idx = results_df['AUC_ROC'].idxmax()
-        print(f"\nBest AUC-ROC: {results_df.loc[best_auc_idx, 'Model']} "
-              f"({results_df.loc[best_auc_idx, 'AUC_ROC']:.4f} ± {results_df.loc[best_auc_idx, 'AUC_ROC_SE']:.4f})")
+    # Find and display best models for key metrics
+    key_metrics = [
+        ('AUC_ROC', 'AUC-ROC'),
+        ('AUC_PR', 'AUC-PR'),
+        ('ACCURACY', 'Accuracy'),
+        ('SENSITIVITY', 'Sensitivity')
+    ]
 
-    if 'ACCURACY' in results_df.columns:
-        best_acc_idx = results_df['ACCURACY'].idxmax()
-        print(f"Best Accuracy: {results_df.loc[best_acc_idx, 'Model']} "
-              f"({results_df.loc[best_acc_idx, 'ACCURACY']:.4f} ± {results_df.loc[best_acc_idx, 'ACCURACY_SE']:.4f})")
-
-    if 'SENSITIVITY' in results_df.columns:
-        best_sens_idx = results_df['SENSITIVITY'].idxmax()
-        print(f"Best Sensitivity: {results_df.loc[best_sens_idx, 'Model']} "
-              f"({results_df.loc[best_sens_idx, 'SENSITIVITY']:.4f} ± {results_df.loc[best_sens_idx, 'SENSITIVITY_SE']:.4f})")
+    for metric_col, metric_display in key_metrics:
+        if metric_col in results_df.columns and not results_df[metric_col].isna().all():
+            best_idx = results_df[metric_col].idxmax()
+            best_model = results_df.loc[best_idx, 'Model']
+            best_value = results_df.loc[best_idx, metric_col]
+            best_se = results_df.loc[best_idx, f'{metric_col}_SE']
+            print(f"\nBest {metric_display}: {best_model} "
+                  f"({best_value:.4f} ± {best_se:.4f})")
 
     print("\n")
 
 
-def get_roc_data(results: Dict) -> Tuple[np.ndarray, np.ndarray, float]:
+def get_roc_data(results: Dict) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[float]]:
     """
     Extract ROC curve data from results.
 
-    Parameters:
-    -----------
-    results : dict
+    Parameters
+    ----------
+    results : Dict
         Results from evaluate_model()
 
-    Returns:
-    --------
-    fpr, tpr, auc_score
+    Returns
+    -------
+    Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[float]]
+        - fpr: False positive rates
+        - tpr: True positive rates
+        - auc_score: AUC-ROC score (bootstrap mean)
+        Returns (None, None, None) if probabilities not available
     """
     if results['y_proba'] is not None:
         fpr, tpr, _ = roc_curve(results['y_true'], results['y_proba'])
-        auc_score = results['bootstrap_stats']['auc_roc']['mean']
+        auc_score = results['bootstrap_stats'][METRIC_AUC_ROC]['mean']
         return fpr, tpr, auc_score
+    else:
+        return None, None, None
+
+
+def get_pr_data(results: Dict) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[float]]:
+    """
+    Extract Precision-Recall curve data from results.
+
+    Parameters
+    ----------
+    results : Dict
+        Results from evaluate_model()
+
+    Returns
+    -------
+    Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[float]]
+        - precision: Precision values
+        - recall: Recall values
+        - auc_score: AUC-PR score (bootstrap mean)
+        Returns (None, None, None) if probabilities not available
+    """
+    if results['y_proba'] is not None:
+        precision, recall, _ = precision_recall_curve(results['y_true'], results['y_proba'])
+        auc_score = results['bootstrap_stats'][METRIC_AUC_PR]['mean']
+        return precision, recall, auc_score
     else:
         return None, None, None
