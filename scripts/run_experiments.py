@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 # Import custom modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.data_loader import load_and_prepare_data
-from src.model_evaluation import evaluate_model, format_results_table, print_results_summary
+from src.model_evaluation import evaluate_model, format_results_table, print_results_summary, format_threshold_comparison
 from src.visualization import save_all_visualizations
 
 # Import sklearn models
@@ -432,6 +432,22 @@ def main():
     results_path = 'outputs/results/model_comparison_results.csv'
     results_df.to_csv(results_path, index=False)
     print(f"\nResults saved to: {results_path}")
+
+    # Save threshold comparison results
+    threshold_comparison_df = format_threshold_comparison(results_list)
+    threshold_path = 'outputs/results/threshold_comparison.csv'
+    threshold_comparison_df.to_csv(threshold_path, index=False)
+    print(f"Threshold comparison results saved to: {threshold_path}")
+
+    # Print threshold comparison summary
+    print("\n" + "="*100)
+    print("THRESHOLD COMPARISON: DEFAULT (0.5) vs OPTIMAL (F1-Maximizing)".center(100))
+    print("="*100)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.precision', 4)
+    print(threshold_comparison_df.to_string(index=False))
+    print("="*100)
 
     # Generate visualizations
     save_all_visualizations(results_df, results_list, output_dir='outputs/figures')
