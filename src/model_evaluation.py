@@ -126,8 +126,8 @@ def bootstrap_metrics(
 
             if y_proba is not None and not np.isnan(metrics['auc_roc']):
                 bootstrap_results['auc_roc'].append(metrics['auc_roc'])
-        except Exception:
-            # Skip problematic bootstrap samples
+        except ValueError:
+            # Skip bootstrap samples that might have only one class, which can cause metric errors.
             continue
 
     # Calculate statistics
