@@ -1,6 +1,6 @@
-# Random Forest Experiments for Fall Prediction
+# Machine Learning Models for Fall Prediction
 
-This repository contains implementations of three random forest experiments for fall risk prediction using gait analysis data, based on the research methodology described in the paper.
+This repository contains comprehensive implementations of multiple machine learning models for fall risk prediction using gait analysis data, including Random Forest experiments based on research methodology and comparative analysis of various ML algorithms.
 
 ## Overview
 
@@ -71,35 +71,108 @@ The experiments progressively improve a fall prediction model through:
   - OOB Score: 76.4%
   - AUC: 0.656
 
+## Comprehensive ML Models Comparison
+
+In addition to the Random Forest experiments, we've implemented a comprehensive comparison of multiple machine learning algorithms:
+
+### Models Implemented (`ml_models_comparison.ipynb`)
+
+1. **Neural Network (Multi-layer Perceptron)**
+   - Hyperparameter search: hidden layers, activation functions, learning rates, L2 regularization
+   - GridSearchCV with 5-fold cross-validation
+
+2. **Support Vector Machine (SVM)**
+   - Kernel types: RBF, linear, polynomial
+   - Hyperparameter search: C, gamma parameters
+   - GridSearchCV with 5-fold cross-validation
+
+3. **Random Forest**
+   - Hyperparameter search: n_estimators, max_features, max_depth, min_samples_split
+   - **Out-of-Bag (OOB) error estimation**
+   - RandomizedSearchCV (50 iterations)
+
+4. **Gradient Boosting**
+   - Hyperparameter search: n_estimators, learning_rate, max_depth, subsample
+   - OOB improvement tracking
+   - RandomizedSearchCV (40 iterations)
+
+5. **XGBoost**
+   - Hyperparameter search: max_depth, learning_rate, n_estimators, subsample, colsample_bytree, gamma
+   - RandomizedSearchCV (50 iterations)
+
+6. **Logistic Regression**
+   - Hyperparameter search: C, penalty (L1/L2), solver
+   - GridSearchCV with 5-fold cross-validation
+
+### Key Features
+
+- **Stratified 75/25 Train-Test Split**: Maintains class balance across splits
+- **Hyperparameter Optimization**:
+  - GridSearchCV for exhaustive search (smaller grids)
+  - RandomizedSearchCV for efficient search (larger grids)
+  - 5-fold cross-validation for all models
+- **OOB Error Estimation**: Used for Random Forest and Gradient Boosting where applicable
+- **Comprehensive Metrics**: Accuracy, Sensitivity, Specificity, Precision, F1 Score, AUC-ROC
+- **Visualization**: ROC curves, performance comparisons, metric breakdowns
+
+### Generated Outputs
+
+From `ml_models_comparison.ipynb`:
+- `ml_models_comparison.csv` - Comprehensive comparison table
+- `hyperparameter_summary.csv` - Best parameters for each model
+- `ml_models_comprehensive_comparison.png` - Multi-panel performance visualization
+- `roc_curves_all_models.png` - ROC curves for all models
+
 ## Files and Outputs
 
 ### Main Files
-- `random_forest_experiments.ipynb` - Complete Jupyter notebook with all three experiments
+- `random_forest_experiments.ipynb` - Three Random Forest experiments (original methodology)
+- `ml_models_comparison.ipynb` - **Comprehensive ML models comparison with hyperparameter tuning**
 - `data/combined_output.csv` - Input dataset (171 participants, 63 columns)
 
 ### Generated Outputs
-- `experiments_summary.csv` - Summary table of all experiment results
+
+From `random_forest_experiments.ipynb`:
+- `experiments_summary.csv` - Summary table of all RF experiment results
 - `experiment_III_elbow_plot.png` - Elbow curves (OOB score and AUC vs. number of linear PCs)
-- `experiments_comparison.png` - Bar chart comparing all experiments
-- `roc_curve_best_model.png` - ROC curve for the best model (Experiment III)
+- `experiments_comparison.png` - Bar chart comparing all RF experiments
+- `roc_curve_best_model.png` - ROC curve for the best RF model (Experiment III)
+
+From `ml_models_comparison.ipynb`:
+- `ml_models_comparison.csv` - Comprehensive comparison of all 6 models
+- `hyperparameter_summary.csv` - Best hyperparameters and CV scores for each model
+- `ml_models_comprehensive_comparison.png` - 4-panel visualization (accuracy, sens/spec, AUC, overall)
+- `roc_curves_all_models.png` - ROC curves overlay for all models
 
 ## How to Run
 
 ### Prerequisites
 ```bash
+# For Random Forest experiments
 pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+
+# For comprehensive ML models comparison (additional requirements)
+pip install xgboost
 ```
 
-### Execute the Notebook
+### Execute the Notebooks
+
+**Random Forest Experiments:**
 ```bash
 cd scripts
 jupyter notebook random_forest_experiments.ipynb
 ```
 
+**Comprehensive ML Models Comparison:**
+```bash
+cd scripts
+jupyter notebook ml_models_comparison.ipynb
+```
+
 Or convert to Python script and run:
 ```bash
-jupyter nbconvert --to script random_forest_experiments.ipynb
-python random_forest_experiments.py
+jupyter nbconvert --to script ml_models_comparison.ipynb
+python ml_models_comparison.py
 ```
 
 ## Key Implementation Features
@@ -169,25 +242,55 @@ To achieve better sensitivity-specificity balance:
 ```
 fallprediction/
 ├── data/
-│   └── combined_output.csv          # Input dataset
+│   └── combined_output.csv                    # Input dataset (171 participants)
 ├── scripts/
-│   ├── random_forest_experiments.ipynb   # Main notebook
-│   ├── experiments_summary.csv           # Results summary
-│   ├── experiment_III_elbow_plot.png     # Elbow analysis
-│   ├── experiments_comparison.png        # Performance comparison
-│   └── roc_curve_best_model.png          # ROC curve
-└── EXPERIMENTS_README.md            # This file
+│   ├── random_forest_experiments.ipynb        # RF experiments I-III
+│   ├── ml_models_comparison.ipynb             # Comprehensive ML comparison ⭐ NEW
+│   ├── experiments_summary.csv                # RF experiment results
+│   ├── ml_models_comparison.csv               # ML models comparison ⭐ NEW
+│   ├── hyperparameter_summary.csv             # Best hyperparameters ⭐ NEW
+│   ├── experiment_III_elbow_plot.png          # Elbow analysis (RF)
+│   ├── experiments_comparison.png             # RF performance comparison
+│   ├── roc_curve_best_model.png               # ROC curve (RF Exp III)
+│   ├── ml_models_comprehensive_comparison.png # 4-panel comparison ⭐ NEW
+│   └── roc_curves_all_models.png              # ROC curves (all models) ⭐ NEW
+└── EXPERIMENTS_README.md                      # This file
 ```
 
 ## Future Work
 
-1. Implement class-balanced modeling approaches
-2. Explore hyperparameter tuning (n_estimators, max_depth, min_samples_split)
-3. Compare with other algorithms (XGBoost, SVM, Neural Networks)
-4. Feature importance analysis to identify most predictive gait parameters
-5. Cross-validation with stratified k-fold for more robust evaluation
-6. Temporal validation if longitudinal data becomes available
-7. External validation on independent cohorts
+### Completed ✓
+- ✓ Explore hyperparameter tuning (n_estimators, max_depth, min_samples_split)
+- ✓ Compare with other algorithms (XGBoost, SVM, Neural Networks, Gradient Boosting, Logistic Regression)
+- ✓ Cross-validation with stratified k-fold for more robust evaluation
+- ✓ Stratified train-test split (75/25)
+- ✓ OOB error estimation for ensemble methods
+
+### Still To Do
+1. **Implement class-balanced modeling approaches**
+   - Class weights in classifiers
+   - SMOTE or other oversampling techniques
+   - Threshold adjustment for better sensitivity-specificity balance
+
+2. **Feature importance analysis**
+   - Identify most predictive gait parameters across all models
+   - SHAP values for model interpretability
+   - Permutation importance analysis
+
+3. **Ensemble methods**
+   - Stacking different models
+   - Voting classifiers combining top performers
+   - Model blending strategies
+
+4. **Advanced validation**
+   - Temporal validation if longitudinal data becomes available
+   - External validation on independent cohorts
+   - Nested cross-validation for unbiased performance estimates
+
+5. **Clinical deployment**
+   - Model calibration for reliable probability estimates
+   - Decision threshold optimization based on clinical costs
+   - Integration with clinical decision support systems
 
 ## Citation
 
