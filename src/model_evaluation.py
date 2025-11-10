@@ -32,7 +32,7 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: Optional[
         accuracy, sensitivity, specificity, precision, f1, auc_roc
     """
     # Get confusion matrix
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
 
     # Calculate metrics
     metrics = {
